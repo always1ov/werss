@@ -1,0 +1,32 @@
+# ==================== WeRSS 极简部署 ====================
+# 单容器 + SQLite，适合个人/小数据量场景。
+#
+# 使用方法：
+#   1. 复制环境变量文件：cp .env.simple.example .env.simple
+#   2. 按需修改 .env.simple 中的用户名和密码
+#   3. 启动：docker compose -f docker-compose.simple.yml up -d
+#   4. 访问：http://localhost:8001
+#
+# 镜像从 GitHub Container Registry 自动拉取（CI 推送后即可用）。
+# 数据持久化在宿主机 ./data 目录，不会因容器删除而丢失。
+
+services:
+  werss:
+    image: ghcr.io/always1ov/werss:latest
+    container_name: werss
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env.simple
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
