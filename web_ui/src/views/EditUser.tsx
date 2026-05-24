@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast'
 import { getUserInfo, updateUserInfo, uploadAvatar } from '@/api/user'
 import { useForm } from 'react-hook-form'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Label } from '@/components/ui/label'
 import { User, Mail, Edit } from 'lucide-react'
 
 interface FormData {
@@ -132,7 +133,7 @@ const EditUser: React.FC = () => {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
               <div className="space-y-2">
-                <FormLabel>用户名</FormLabel>
+                <Label>用户名</Label>
                 <Input
                   value={username}
                   readOnly
