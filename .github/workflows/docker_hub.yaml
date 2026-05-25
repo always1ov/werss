@@ -1,15 +1,7 @@
 name: Publish Docker image to Docker Hub
 
 on:
-  push:
-     branches:
-      - main
-     paths:  # 仅在指定文件变化时触发（可选）
-      - 'ReadMe.md'
-      - 'README.zh-CN.md'
-      - 'core/ver.py'
-      - 'Dockerfile'
-      - 'requirements.txt'
+  workflow_dispatch:  # 仅手动触发，不自动运行
 
 env:
   REGISTRY: docker.io
