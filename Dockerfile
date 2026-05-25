@@ -63,7 +63,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 注意：勿把浏览器装到 RUN --mount=type=cache 目录，否则缓存不会写入镜像层，运行时会缺浏览器。
 ARG BROWSER_TYPE=firefox
 ENV BROWSER_TYPE=${BROWSER_TYPE} \
-    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 \
+    PLAYWRIGHT_BROWSERS_PATH=/app/playwright
 RUN export PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 && \
     ( export PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright && \
       python3 -m playwright install ${BROWSER_TYPE} --with-deps || \
