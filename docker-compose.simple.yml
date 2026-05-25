@@ -20,7 +20,7 @@ services:
     env_file:
       - .env.simple
     environment:
-      - INSTALL=True
+      - PLAYWRIGHT_BROWSERS_PATH=/app/playwright
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

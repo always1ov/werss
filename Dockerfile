@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1.4
-# Build: 2026-05-25
 
 # 第一阶段：前端构建（在构建机平台上运行，不影响最终镜像）
 FROM --platform=$BUILDPLATFORM node:20.18.0-slim AS frontend-builder
@@ -42,10 +41,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements.txt || \
     pip install -r requirements.txt
 
-# 浏览器不打入镜像，由 start.sh 在首次启动时下载到 volume（INSTALL=True）
-# 好处：镜像体积减少约 500MB；浏览器存在 ./data/driver/ 中，更新镜像后无需重下
+# 构建时在 CI 环境下载浏览器并打入镜像（CI 可访问 Playwright CDN）
+# 路径固定为 /app/playwright，不依赖运行时网络，不受服务器网络限制影响
 ARG BROWSER_TYPE=firefox
-ENV BROWSER_TYPE=${BROWSER_TYPE}
+ENV BROWSER_TYPE=${BROWSER_TYPE} \
+    PLAYWRIGHT_BROWSERS_PATH=/app/playwright
+
+RUN python3 -m playwright install ${BROWSER_TYPE} --with-deps \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY config.example.yaml config.yaml
 COPY apis/ apis/
