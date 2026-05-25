@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.4
+# Build: 2026-05-25
 
 # 第一阶段：前端构建（在构建机平台上运行，不影响最终镜像）
 FROM --platform=$BUILDPLATFORM node:20.18.0-slim AS frontend-builder
