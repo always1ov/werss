@@ -976,7 +976,6 @@ class WeChatAPI:
                 "code":f"/{self.wx_login_url}?t={(time.time())}",
                 "is_exists":self.GetHasCode(),
             }
-        from core.print import print_warning
         from core.thread import ThreadManager
         self.thread = ThreadManager(target=self.get_qr_code,args=(CallBack,Notice))  # 传入函数名
         self.thread.start()  # 启动线程
