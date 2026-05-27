@@ -147,7 +147,7 @@ class ArticleFilterEngine:
                 decision="keep",
                 category="unknown",
                 confidence=0.0,
-                reason="未配置 OpenAI 兼容 API，已仅执行规则过滤",
+                reason="未配置任何 AI API（OPENAI_API_KEY 或 ANTHROPIC_API_KEY），已仅执行规则过滤",
                 model_name="rule-only",
             )
 
@@ -184,6 +184,10 @@ class ArticleFilterEngine:
                     messages=[{"role": "user", "content": user_prompt}],
                 )
                 content = (response.content[0].text if response.content else None) or "{}"
+                # 剥离可能的 markdown 代码块
+                fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
+                if fence:
+                    content = fence.group(1)
             else:
                 response = await self.client.chat.completions.create(
                     model=self.model,

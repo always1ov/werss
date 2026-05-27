@@ -99,6 +99,8 @@ class TagExtractor:
 
             api_key = str(api_key_raw) if api_key_raw else ""
             base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
+            if base_url and not base_url.endswith("/"):
+                base_url = base_url + "/"
             model = str(model_raw) if model_raw else "gpt-4o"
 
             if api_key:
