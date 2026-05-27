@@ -3,7 +3,18 @@ import asyncio
 import os
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
-from openai import AsyncOpenAI
+
+try:
+    from openai import AsyncOpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+try:
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
 
 from core.config import cfg
 from core.log import logger
@@ -60,38 +71,52 @@ async def call_llm_clustering(
     api_key: str,
     base_url: str,
     model: str,
-    max_topics: int = 5
+    max_topics: int = 5,
+    provider: str = "openai",
 ) -> str:
     """
     调用 LLM 进行聚类
 
     Args:
         cards: 文章卡片列表
-        api_key: OpenAI API Key
-        base_url: API Base URL
+        api_key: API Key
+        base_url: API Base URL（OpenAI-compatible 时使用）
         model: 模型名称
         max_topics: 最大热点数量
+        provider: "anthropic" 或 "openai"
 
     Returns:
         LLM 返回的原始 JSON 字符串
     """
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-
     system_prompt = build_system_prompt()
     user_prompt = build_clustering_prompt(cards, max_topics=max_topics)
 
     try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.2,
-            max_tokens=8000,
-        )
+        if provider == "anthropic" and ANTHROPIC_AVAILABLE:
+            client = AsyncAnthropic(api_key=api_key)
+            response = await client.messages.create(
+                model=model,
+                max_tokens=8000,
+                temperature=0.2,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            result = response.content[0].text if response.content else None
+        else:
+            if not OPENAI_AVAILABLE:
+                raise RuntimeError("openai 模块未安装")
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=8000,
+            )
+            result = response.choices[0].message.content
 
-        result = response.choices[0].message.content
         if result is None:
             raise ValueError("LLM 返回内容为空")
 
@@ -165,13 +190,28 @@ async def run_discovery(db: Session, window_days: int = 3, max_topics: int = 5) 
     Raises:
         Exception: 当执行失败时
     """
-    # 1. 获取配置
-    api_key = cfg.get("openai.api_key", None) or os.getenv("OPENAI_API_KEY", "")
-    base_url = cfg.get("openai.base_url", None) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    model = cfg.get("openai.model", None) or os.getenv("OPENAI_MODEL", "gpt-4o")
+    # 1. 获取配置 — Anthropic 优先，不可用时退回 OpenAI-compatible
+    anthropic_key = cfg.get("anthropic.api_key", None) or os.getenv("ANTHROPIC_API_KEY", "")
+    if anthropic_key and ANTHROPIC_AVAILABLE:
+        provider = "anthropic"
+        api_key = str(anthropic_key)
+        model = str(
+            cfg.get("anthropic.model", None)
+            or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
+            or "claude-opus-4-7"
+        )
+        base_url = ""
+    else:
+        provider = "openai"
+        api_key = cfg.get("openai.api_key", None) or os.getenv("OPENAI_API_KEY", "")
+        base_url = cfg.get("openai.base_url", None) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        model = cfg.get("openai.model", None) or os.getenv("OPENAI_MODEL", "gpt-4o")
+        # OpenAI SDK 要求 base_url 以 / 结尾，否则会截掉路径（如 /v1）
+        if base_url and not base_url.endswith("/"):
+            base_url = base_url + "/"
 
     if not api_key:
-        raise ValueError("OpenAI API Key 未配置")
+        raise ValueError("未配置任何 LLM API（需要 ANTHROPIC_API_KEY 或 OPENAI_API_KEY）")
 
     # 2. 创建 run 记录
     run = create_run(db, window_days, model, PROMPT_VERSION)
@@ -196,7 +236,7 @@ async def run_discovery(db: Session, window_days: int = 3, max_topics: int = 5) 
 
         # 6. 调用 LLM
         print_info("调用 LLM 进行聚类...")
-        raw_response = await call_llm_clustering(cards, api_key, base_url, model, max_topics)
+        raw_response = await call_llm_clustering(cards, api_key, base_url, model, max_topics, provider)
 
         # 7. 解析响应
         topics_data, parse_errors = parse_llm_response(raw_response, valid_article_ids)

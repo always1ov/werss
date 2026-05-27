@@ -71,8 +71,9 @@ webdriver-manager==4.0.2
 websocket-client==1.8.0
 wsproto==1.2.0
 yarl==1.22.0
-# AI 标签提取功能（DeepSeek API）
+# AI 标签提取功能（OpenAI 兼容 API 或 Anthropic）
 openai>=2.11.0
+anthropic>=0.25.0
 # MinIO 对象存储（用于图片上传）
 minio>=7.2.0
 # 可视化降维算法
