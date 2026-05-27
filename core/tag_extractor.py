@@ -82,13 +82,17 @@ class TagExtractor:
         anthropic_key = cfg.get("anthropic.api_key", None, silent=True) or os.getenv("ANTHROPIC_API_KEY", "")
         if anthropic_key and ANTHROPIC_AVAILABLE:
             self.ai_provider = "anthropic"
-            self.ai_client = AsyncAnthropic(api_key=str(anthropic_key))
             self.ai_model = str(
                 cfg.get("anthropic.model", None, silent=True)
                 or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
                 or "claude-opus-4-7"
             )
-            logger.info(f"Anthropic API 已配置，模型: {self.ai_model}")
+            anthropic_base_url = cfg.get("anthropic.base_url", None, silent=True) or os.getenv("ANTHROPIC_BASE_URL", "")
+            client_kwargs = {"api_key": str(anthropic_key)}
+            if anthropic_base_url:
+                client_kwargs["base_url"] = str(anthropic_base_url)
+            self.ai_client = AsyncAnthropic(**client_kwargs)
+            logger.info(f"Anthropic API 已配置，模型: {self.ai_model}, Base URL: {anthropic_base_url or 'official'}")
             return
 
         # Fall back to OpenAI-compatible
@@ -562,12 +566,16 @@ def get_tag_extractor() -> TagExtractor:
             anthropic_key = cfg.get("anthropic.api_key", None, silent=True) or os.getenv("ANTHROPIC_API_KEY", "")
             if anthropic_key and ANTHROPIC_AVAILABLE:
                 _global_extractor.ai_provider = "anthropic"
-                _global_extractor.ai_client = AsyncAnthropic(api_key=str(anthropic_key))
                 _global_extractor.ai_model = str(
                     cfg.get("anthropic.model", None, silent=True)
                     or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
                     or "claude-opus-4-7"
                 )
+                anthropic_base_url = cfg.get("anthropic.base_url", None, silent=True) or os.getenv("ANTHROPIC_BASE_URL", "")
+                client_kwargs = {"api_key": str(anthropic_key)}
+                if anthropic_base_url:
+                    client_kwargs["base_url"] = str(anthropic_base_url)
+                _global_extractor.ai_client = AsyncAnthropic(**client_kwargs)
                 logger.info(f"已重新初始化 Anthropic API 客户端，模型: {_global_extractor.ai_model}")
             elif AI_AVAILABLE:
                 api_key_raw = cfg.get("openai.api_key", None, silent=True) or os.getenv("OPENAI_API_KEY", "")

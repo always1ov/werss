@@ -93,7 +93,10 @@ async def call_llm_clustering(
 
     try:
         if provider == "anthropic" and ANTHROPIC_AVAILABLE:
-            client = AsyncAnthropic(api_key=api_key)
+            client_kwargs = {"api_key": api_key}
+            if base_url:
+                client_kwargs["base_url"] = base_url
+            client = AsyncAnthropic(**client_kwargs)
             response = await client.messages.create(
                 model=model,
                 max_tokens=8000,
@@ -200,7 +203,7 @@ async def run_discovery(db: Session, window_days: int = 3, max_topics: int = 5) 
             or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
             or "claude-opus-4-7"
         )
-        base_url = ""
+        base_url = str(cfg.get("anthropic.base_url", None) or os.getenv("ANTHROPIC_BASE_URL", "") or "")
     else:
         provider = "openai"
         api_key = cfg.get("openai.api_key", None) or os.getenv("OPENAI_API_KEY", "")

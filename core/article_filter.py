@@ -82,8 +82,12 @@ class ArticleFilterEngine:
                 or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
                 or "claude-opus-4-7"
             )
-            self.client = AsyncAnthropic(api_key=self.api_key)
-            logger.info("文章 AI 过滤器已启用 (Anthropic)，模型: %s", self.model)
+            anthropic_base_url = cfg.get("anthropic.base_url", None, silent=True) or os.getenv("ANTHROPIC_BASE_URL", "")
+            client_kwargs = {"api_key": self.api_key}
+            if anthropic_base_url:
+                client_kwargs["base_url"] = str(anthropic_base_url)
+            self.client = AsyncAnthropic(**client_kwargs)
+            logger.info("文章 AI 过滤器已启用 (Anthropic)，模型: %s, Base URL: %s", self.model, anthropic_base_url or "official")
             return
 
         # Fall back to OpenAI-compatible
