@@ -17,6 +17,13 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("openai 模块未安装，文章 AI 过滤功能不可用")
 
+try:
+    from anthropic import AsyncAnthropic
+
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 
 _RULES = [
     (
@@ -63,7 +70,23 @@ class ArticleFilterEngine:
         self.model = None
         self.base_url = None
         self.api_key = None
+        self.provider = "openai"
 
+        # Prefer Anthropic if configured
+        anthropic_key = cfg.get("anthropic.api_key", None, silent=True) or os.getenv("ANTHROPIC_API_KEY", "")
+        if anthropic_key and ANTHROPIC_AVAILABLE:
+            self.provider = "anthropic"
+            self.api_key = str(anthropic_key)
+            self.model = str(
+                cfg.get("anthropic.model", None, silent=True)
+                or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
+                or "claude-opus-4-7"
+            )
+            self.client = AsyncAnthropic(api_key=self.api_key)
+            logger.info("文章 AI 过滤器已启用 (Anthropic)，模型: %s", self.model)
+            return
+
+        # Fall back to OpenAI-compatible
         api_key_raw = cfg.get("openai.api_key", None, silent=True) or os.getenv("OPENAI_API_KEY", "")
         base_url_raw = cfg.get("openai.base_url", None, silent=True) or os.getenv(
             "OPENAI_BASE_URL", "https://api.openai.com/v1"
@@ -152,16 +175,26 @@ class ArticleFilterEngine:
         )
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                temperature=0,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-            content = response.choices[0].message.content or "{}"
+            if self.provider == "anthropic":
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=512,
+                    temperature=0,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                content = (response.content[0].text if response.content else None) or "{}"
+            else:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                content = response.choices[0].message.content or "{}"
             data = json.loads(content)
             decision = str(data.get("decision", "keep")).strip().lower()
             if decision not in {"keep", "hide", "maybe"}:

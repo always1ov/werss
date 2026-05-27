@@ -20,7 +20,11 @@ from core.models.tags import Tags as TagsModel
 from core.models.tag_clusters import TagCluster
 from core.models.tag_cluster_members import TagClusterMember
 from core.print import print_warning
-from core.visualization import compute_2d_layout, normalize_coordinates
+try:
+    from core.visualization import compute_2d_layout, normalize_coordinates
+    _VISUALIZATION_AVAILABLE = True
+except ImportError:
+    _VISUALIZATION_AVAILABLE = False
 
 router = APIRouter(prefix="/mcp", tags=["MCP"])
 
@@ -456,6 +460,8 @@ def _get_tag_cluster(cluster_id: str):
 
 
 def _get_tag_cluster_visualization(params: dict[str, Any]):
+    if not _VISUALIZATION_AVAILABLE:
+        raise MCPError(-32000, "Visualization not available: numpy/scikit-learn not installed")
     session = _get_session()
     try:
         cluster_id = params["cluster_id"]

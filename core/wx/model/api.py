@@ -269,7 +269,7 @@ class MpsApi(WxGather):
                     # 或者遇到连续已存在文章时，也停止
                     if should_stop_by_date:
                         if found_start_date_article or consecutive_existing_count >= max_consecutive_existing:
-                        break
+                            break
                     print(f"第{i+1}页爬取成功\n")
                 # 翻页
                 i += 1

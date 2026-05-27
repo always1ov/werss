@@ -4,27 +4,11 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'core/ver.py'
-      - 'Dockerfile'
-      - 'requirements.txt'
-      - 'web_ui/package.json'
-      - 'web_ui/src/**'
-      - 'apis/**'
-      - 'core/**'
-      - 'jobs/**'
-      - 'driver/**'
-  workflow_dispatch:
-    inputs:
-      platforms:
-        description: 'Target platforms (comma-separated)'
-        required: false
-        default: 'linux/amd64,linux/arm64'
-        type: string
+  workflow_dispatch:  # 支持手动触发
 
 permissions:
   contents: read
-  packages: write
+  packages: write   # 推送到 GHCR 必须
 
 jobs:
   build-and-push:
@@ -44,23 +28,22 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix={{branch}}-
-            type=ref,event=branch
+            type=sha,prefix=main-
 
       - name: Build and Push Multi-platform Docker Image
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ inputs.platforms || 'linux/amd64,linux/arm64' }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
@@ -69,7 +52,5 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.revision=${{ github.sha }}
-          provenance: false
-          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

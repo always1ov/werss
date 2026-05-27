@@ -2,10 +2,13 @@
 # 单容器 + SQLite，适合个人/小数据量场景。
 #
 # 使用方法：
-#   1. cp .env.simple.example .env.simple
-#   2. 修改 .env.simple 中的用户名和密码
-#   3. docker compose -f docker-compose.simple.yml up -d
-#   4. 访问 http://localhost:8001
+#   1. 复制环境变量文件：cp .env.simple.example .env.simple
+#   2. 按需修改 .env.simple 中的用户名和密码
+#   3. 启动：docker compose -f docker-compose.simple.yml up -d
+#   4. 访问：http://localhost:8001
+#
+# 镜像从 GitHub Container Registry 自动拉取（CI 推送后即可用）。
+# 数据持久化在宿主机 ./data 目录，不会因容器删除而丢失。
 
 services:
   werss:
@@ -19,8 +22,6 @@ services:
       - ./logs:/app/logs
     env_file:
       - .env.simple
-    environment:
-      - PLAYWRIGHT_BROWSERS_PATH=/app/playwright
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

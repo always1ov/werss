@@ -43,6 +43,12 @@ except ImportError:
     AI_AVAILABLE = False
     logger.warning("openai 模块未安装，AI 提取功能不可用")
 
+try:
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 # 全局单例实例，用于常驻内存
 _global_extractor = None
 
@@ -66,30 +72,37 @@ class TagExtractor:
         """初始化标签提取器"""
         self.ai_client = None
         self.ai_model = None
+        self.ai_provider = "openai"
         self._custom_tags_cache = None  # 缓存用户自定义标签
 
         # 在开发环境中加载 .env 文件（如果存在）
         load_dev_env_if_needed()
 
-        # 检查是否配置了 AI
+        # Prefer Anthropic if configured
+        anthropic_key = cfg.get("anthropic.api_key", None, silent=True) or os.getenv("ANTHROPIC_API_KEY", "")
+        if anthropic_key and ANTHROPIC_AVAILABLE:
+            self.ai_provider = "anthropic"
+            self.ai_client = AsyncAnthropic(api_key=str(anthropic_key))
+            self.ai_model = str(
+                cfg.get("anthropic.model", None, silent=True)
+                or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
+                or "claude-opus-4-7"
+            )
+            logger.info(f"Anthropic API 已配置，模型: {self.ai_model}")
+            return
+
+        # Fall back to OpenAI-compatible
         if AI_AVAILABLE:
-            # 提供默认值 None，silent=True 避免输出警告（如果配置文件中没有这些项，会从环境变量读取）
             api_key_raw = cfg.get("openai.api_key", None, silent=True) or os.getenv("OPENAI_API_KEY", "")
             base_url_raw = cfg.get("openai.base_url", None, silent=True) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
             model_raw = cfg.get("openai.model", None, silent=True) or os.getenv("OPENAI_MODEL", "gpt-4o")
 
-            # 确保类型为字符串
             api_key = str(api_key_raw) if api_key_raw else ""
             base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
-            if base_url and not base_url.endswith("/"):
-                base_url = base_url + "/"
             model = str(model_raw) if model_raw else "gpt-4o"
 
             if api_key:
-                self.ai_client = AsyncOpenAI(
-                    api_key=api_key,
-                    base_url=base_url,
-                )
+                self.ai_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
                 self.ai_model = model
                 logger.info(f"OpenAI API 已配置，模型: {model}, Base URL: {base_url}")
             else:
@@ -254,7 +267,7 @@ class TagExtractor:
             标签关键词列表
         """
         if not self.ai_client:
-            logger.warning("OpenAI API 未配置，无法使用 AI 提取")
+            logger.warning("AI API 未配置，无法使用 AI 提取")
             return []
 
         # 处理 content 和 description
@@ -288,66 +301,81 @@ class TagExtractor:
         try:
             import json
 
-            # 检查是否是 Qwen3 模型，如果是则禁用思考功能
-            # DeepSeek 模型不需要处理（不会有思考过程问题）
-            model_name_lower = str(self.ai_model).lower() if self.ai_model else ""
-            is_qwen3 = "qwen3" in model_name_lower or (
-                "qwen" in model_name_lower and "3" in model_name_lower
-            )
+            system_content = "你是一个专业的文章标签分析专家，用于热点主题聚类。必须优先提取公司名称、产品名称、技术名称等具体实体，避免宽泛的通用词汇。如果文章提到公司，公司名称必须包含在标签中。只返回 JSON 格式的标签数组，不要包含任何解释。"
 
-            # 构建 API 调用参数
-            api_params = {
-                "model": self.ai_model,
-                "messages": [
-                    {"role": "system", "content": "你是一个专业的文章标签分析专家，用于热点主题聚类。必须优先提取公司名称、产品名称、技术名称等具体实体，避免宽泛的通用词汇。如果文章提到公司，公司名称必须包含在标签中。只返回 JSON 格式的标签数组，不要包含任何解释。"},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.2,
-                # DeepSeek v4 等会把「思考」计入 reasoning_content；过小会导致 content 为空且解析失败
-                "max_tokens": 1024,
-            }
+            # Anthropic path
+            if self.ai_provider == "anthropic":
+                response = await self.ai_client.messages.create(
+                    model=self.ai_model,
+                    max_tokens=1024,
+                    temperature=0.2,
+                    system=system_content,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = (response.content[0].text if response.content else None) or ""
+                result = raw.strip()
+                if not result:
+                    logger.error("Anthropic 返回内容为空")
+                    return []
+            else:
+                # OpenAI-compatible path
+                # 检查是否是 Qwen3 模型，如果是则禁用思考功能
+                model_name_lower = str(self.ai_model).lower() if self.ai_model else ""
+                is_qwen3 = "qwen3" in model_name_lower or (
+                    "qwen" in model_name_lower and "3" in model_name_lower
+                )
 
-            # 如果是 Qwen3 模型，添加禁用思考的参数
-            if is_qwen3:
-                api_params["extra_body"] = {
-                    "chat_template_kwargs": {
-                        "enable_thinking": False
-                    }
+                api_params = {
+                    "model": self.ai_model,
+                    "messages": [
+                        {"role": "system", "content": system_content},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    # DeepSeek v4 等会把「思考」计入 reasoning_content；过小会导致 content 为空且解析失败
+                    "max_tokens": 1024,
                 }
 
-            response = await self.ai_client.chat.completions.create(**api_params)
+                if is_qwen3:
+                    api_params["extra_body"] = {
+                        "chat_template_kwargs": {
+                            "enable_thinking": False
+                        }
+                    }
 
-            choice = response.choices[0]
-            msg = choice.message
-            raw = msg.content
-            if raw is None:
-                raw = ""
-            else:
-                raw = str(raw).strip()
+                response = await self.ai_client.chat.completions.create(**api_params)
 
-            md = msg.model_dump() if hasattr(msg, "model_dump") else {}
-            reasoning = md.get("reasoning_content") or ""
-            if isinstance(reasoning, str):
-                reasoning = reasoning.strip()
-            else:
-                reasoning = ""
+                choice = response.choices[0]
+                msg = choice.message
+                raw = msg.content
+                if raw is None:
+                    raw = ""
+                else:
+                    raw = str(raw).strip()
 
-            if not raw and reasoning:
-                raw = reasoning
-                logger.info(
-                    "标签提取：message.content 为空，已改用 reasoning_content 解析（常见于 DeepSeek 等推理字段）"
-                )
+                md = msg.model_dump() if hasattr(msg, "model_dump") else {}
+                reasoning = md.get("reasoning_content") or ""
+                if isinstance(reasoning, str):
+                    reasoning = reasoning.strip()
+                else:
+                    reasoning = ""
 
-            if choice.finish_reason == "length":
-                logger.warning(
-                    "标签提取：因 max_tokens 截断结束（finish_reason=length），已尽量从正文或推理文本中解析 JSON"
-                )
+                if not raw and reasoning:
+                    raw = reasoning
+                    logger.info(
+                        "标签提取：message.content 为空，已改用 reasoning_content 解析（常见于 DeepSeek 等推理字段）"
+                    )
 
-            if not raw:
-                logger.error("AI 返回内容为空（content 与 reasoning_content 均无有效文本）")
-                return []
+                if choice.finish_reason == "length":
+                    logger.warning(
+                        "标签提取：因 max_tokens 截断结束（finish_reason=length），已尽量从正文或推理文本中解析 JSON"
+                    )
 
-            result = raw
+                if not raw:
+                    logger.error("AI 返回内容为空（content 与 reasoning_content 均无有效文本）")
+                    return []
+
+                result = raw
 
             # 处理可能包含 reasoning 标签的情况（如 o1 系列模型）
             import re
@@ -517,7 +545,8 @@ def get_tag_extractor() -> TagExtractor:
         _global_extractor = TagExtractor()
 
         if _global_extractor.ai_client is not None:
-            logger.info("已创建全局 TagExtractor 实例，使用 AI 提取（OpenAI 兼容 API）")
+            provider = getattr(_global_extractor, "ai_provider", "openai")
+            logger.info(f"已创建全局 TagExtractor 实例，使用 AI 提取 (provider={provider})")
         else:
             logger.warning(
                 "已创建全局 TagExtractor 实例，但未检测到可用 API 客户端，"
@@ -525,23 +554,31 @@ def get_tag_extractor() -> TagExtractor:
             )
     else:
         # 如果实例已存在，但 AI 客户端未初始化，尝试重新初始化
-        if AI_AVAILABLE and _global_extractor.ai_client is None:
+        if _global_extractor.ai_client is None:
             load_dev_env_if_needed()
-            # 提供默认值 None，silent=True 避免输出警告（如果配置文件中没有这些项，会从环境变量读取）
-            api_key_raw = cfg.get("openai.api_key", None, silent=True) or os.getenv("OPENAI_API_KEY", "")
-            if api_key_raw:
-                base_url_raw = cfg.get("openai.base_url", None, silent=True) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-                model_raw = cfg.get("openai.model", None, silent=True) or os.getenv("OPENAI_MODEL", "gpt-4o")
-                # 确保类型为字符串
-                api_key = str(api_key_raw) if api_key_raw else ""
-                base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
-                if base_url and not base_url.endswith("/"):
-                    base_url = base_url + "/"
-                model = str(model_raw) if model_raw else "gpt-4o"
-                _global_extractor.ai_client = AsyncOpenAI(
-                    api_key=api_key,
-                    base_url=base_url,
+            # Try Anthropic first
+            anthropic_key = cfg.get("anthropic.api_key", None, silent=True) or os.getenv("ANTHROPIC_API_KEY", "")
+            if anthropic_key and ANTHROPIC_AVAILABLE:
+                _global_extractor.ai_provider = "anthropic"
+                _global_extractor.ai_client = AsyncAnthropic(api_key=str(anthropic_key))
+                _global_extractor.ai_model = str(
+                    cfg.get("anthropic.model", None, silent=True)
+                    or os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
+                    or "claude-opus-4-7"
                 )
-                _global_extractor.ai_model = model
-                logger.info(f"已重新初始化 OpenAI API 客户端，模型: {model}")
+                logger.info(f"已重新初始化 Anthropic API 客户端，模型: {_global_extractor.ai_model}")
+            elif AI_AVAILABLE:
+                api_key_raw = cfg.get("openai.api_key", None, silent=True) or os.getenv("OPENAI_API_KEY", "")
+                if api_key_raw:
+                    base_url_raw = cfg.get("openai.base_url", None, silent=True) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+                    model_raw = cfg.get("openai.model", None, silent=True) or os.getenv("OPENAI_MODEL", "gpt-4o")
+                    api_key = str(api_key_raw)
+                    base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
+                    if not base_url.endswith("/"):
+                        base_url += "/"
+                    model = str(model_raw) if model_raw else "gpt-4o"
+                    _global_extractor.ai_provider = "openai"
+                    _global_extractor.ai_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+                    _global_extractor.ai_model = model
+                    logger.info(f"已重新初始化 OpenAI API 客户端，模型: {model}")
     return _global_extractor
