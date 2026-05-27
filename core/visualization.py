@@ -5,8 +5,14 @@ Embedding聚类可视化模块
 
 import os
 from typing import Any, Dict, List, Tuple
-import numpy as np
 from sqlalchemy.orm import Session
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None  # type: ignore[assignment]
 
 from core.models.tag_cluster_members import TagClusterMember
 from core.models.tag_embeddings import TagEmbedding
@@ -47,6 +53,8 @@ def reduce_dimensions(
     Returns:
         降维后的向量列表
     """
+    if not NUMPY_AVAILABLE:
+        raise ImportError("numpy is required for visualization. Install it: pip install numpy scikit-learn")
     if not vectors or len(vectors) == 0:
         return []
 

@@ -15,7 +15,11 @@ from core.models.tag_clusters import TagCluster
 from core.models.tag_similarities import TagSimilarity
 from core.models.tags import Tags as TagsModel
 from core.tag_cluster import rebuild_tag_clusters
-from core.visualization import compute_2d_layout, normalize_coordinates, compute_cluster_overview
+try:
+    from core.visualization import compute_2d_layout, normalize_coordinates, compute_cluster_overview
+    _VISUALIZATION_AVAILABLE = True
+except ImportError:
+    _VISUALIZATION_AVAILABLE = False
 from .base import success_response, error_response
 
 router = APIRouter(prefix="/tag-clusters", tags=["标签聚类"])
@@ -263,6 +267,8 @@ async def get_clusters_overview(
 
     用于在全局视图中展示所有聚类的关系。
     """
+    if not _VISUALIZATION_AVAILABLE:
+        return error_response(503, "可视化功能不可用：需要安装 numpy 和 scikit-learn")
     try:
         # 获取最大的几个聚类
         clusters = (
@@ -329,6 +335,8 @@ async def get_cluster_visualization(
     - tsne: t-SNE，高质量但较慢
     - umap: UMAP，平衡性能和质量
     """
+    if not _VISUALIZATION_AVAILABLE:
+        return error_response(503, "可视化功能不可用：需要安装 numpy 和 scikit-learn")
     try:
         # 验证聚类是否存在
         cluster = _resolve_cluster(db, cluster_id)
