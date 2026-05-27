@@ -81,6 +81,8 @@ class TagExtractor:
             # 确保类型为字符串
             api_key = str(api_key_raw) if api_key_raw else ""
             base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
+            if base_url and not base_url.endswith("/"):
+                base_url = base_url + "/"
             model = str(model_raw) if model_raw else "gpt-4o"
 
             if api_key:
@@ -533,6 +535,8 @@ def get_tag_extractor() -> TagExtractor:
                 # 确保类型为字符串
                 api_key = str(api_key_raw) if api_key_raw else ""
                 base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
+                if base_url and not base_url.endswith("/"):
+                    base_url = base_url + "/"
                 model = str(model_raw) if model_raw else "gpt-4o"
                 _global_extractor.ai_client = AsyncOpenAI(
                     api_key=api_key,

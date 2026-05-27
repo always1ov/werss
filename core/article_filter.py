@@ -74,6 +74,8 @@ class ArticleFilterEngine:
 
         self.api_key = str(api_key_raw) if api_key_raw else ""
         self.base_url = str(base_url_raw) if base_url_raw else "https://api.openai.com/v1"
+        if self.base_url and not self.base_url.endswith("/"):
+            self.base_url = self.base_url + "/"
         self.model = str(model_raw) if model_raw else "gpt-4o-mini"
 
         if OPENAI_AVAILABLE and self.api_key:

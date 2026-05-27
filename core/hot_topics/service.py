@@ -169,6 +169,9 @@ async def run_discovery(db: Session, window_days: int = 3, max_topics: int = 5) 
     api_key = cfg.get("openai.api_key", None) or os.getenv("OPENAI_API_KEY", "")
     base_url = cfg.get("openai.base_url", None) or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     model = cfg.get("openai.model", None) or os.getenv("OPENAI_MODEL", "gpt-4o")
+    # OpenAI SDK 要求 base_url 以 / 结尾，否则会截掉路径（如 /v1）
+    if base_url and not base_url.endswith("/"):
+        base_url = base_url + "/"
 
     if not api_key:
         raise ValueError("OpenAI API Key 未配置")
