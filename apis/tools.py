@@ -14,8 +14,14 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-# 导入导出工具
-from tools.mdtools.export import export_md_to_doc, process_articles
+# 导入导出工具（python-docx 可选，缺失时 docx 导出接口返回 503）
+try:
+    from tools.mdtools.export import export_md_to_doc, process_articles
+    _DOCX_AVAILABLE = True
+except (ImportError, Exception):
+    _DOCX_AVAILABLE = False
+    export_md_to_doc = None
+    process_articles = None
 
 router = APIRouter(prefix="/tools", tags=["工具"])
 
@@ -442,6 +448,8 @@ async def export_articles(
     """
     导出文章为多种格式（使用线程池异步处理）
     """
+    if not _DOCX_AVAILABLE:
+        raise HTTPException(status_code=503, detail="导出功能不可用：python-docx 未安装")
     try:
         # 验证参数
         # 如果 mp_id 是 None 或空字符串，且没有指定 doc_id，则报错
