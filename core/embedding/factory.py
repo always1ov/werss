@@ -58,4 +58,12 @@ def get_embedding_provider() -> EmbeddingProvider:
             max_concurrency=max_concurrency,
         )
 
+    if provider == "minimax":
+        api_key = os.getenv("MINIMAX_API_KEY", "").strip() or os.getenv("ANTHROPIC_API_KEY", "").strip()
+        base_url = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1").strip()
+        model = os.getenv("MINIMAX_EMBEDDING_MODEL", "embo-01").strip()
+        if not api_key:
+            raise ValueError("MINIMAX_API_KEY 未配置")
+        return BigModelEmbeddingProvider(api_key=api_key, base_url=base_url, model_name=model, dimensions=dimensions)
+
     raise ValueError(f"不支持的 embedding provider: {provider}")
