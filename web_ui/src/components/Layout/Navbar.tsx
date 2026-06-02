@@ -26,7 +26,8 @@ import {
   Flame,
   Clock,
   Download,
-  Send
+  Send,
+  Newspaper
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -74,6 +75,11 @@ const Navbar: React.FC = () => {
       title: t('layout.hotTopicsDiscovery'),
       url: '/hot-topics',
       icon: Flame,
+    },
+    {
+      title: 'AI 日报',
+      url: '/ai-digest',
+      icon: Newspaper,
     },
     {
       title: t('layout.notifyTasks'),

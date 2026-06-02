@@ -715,6 +715,8 @@ def reload_job():
     register_article_retention_job(scheduler)
     from jobs.hot_topics_job import register_hot_topics_job
     register_hot_topics_job(scheduler)
+    from jobs.ai_digest_job import register_ai_digest_job
+    register_ai_digest_job(scheduler)
     # 新任务
     from jobs.fetch_task_job import reload_fetch_jobs
     from jobs.notify_task_job import reload_notify_jobs
@@ -792,6 +794,8 @@ def start_all_task():
     register_article_retention_job(scheduler)
     from jobs.hot_topics_job import register_hot_topics_job
     register_hot_topics_job(scheduler)
+    from jobs.ai_digest_job import register_ai_digest_job
+    register_ai_digest_job(scheduler)
 if __name__ == '__main__':
     # do_job()
     # start_all_task()

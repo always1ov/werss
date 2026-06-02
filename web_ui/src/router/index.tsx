@@ -25,6 +25,7 @@ import TagForm from '../views/TagForm'
 import TagClusterList from '../views/TagClusterList'
 import TagClusterDetail from '../views/TagClusterDetail'
 import HotTopics from '../views/HotTopics'
+import AiDigest from '../views/AiDigest'
 import Dashboard from '../views/Dashboard'
 import Settings from '../views/Settings'
 import ApiKeyManagement from '../views/ApiKeyManagement'
@@ -267,6 +268,10 @@ const router = createBrowserRouter(
       {
         path: 'hot-topics',
         element: <HotTopics />
+      },
+      {
+        path: 'ai-digest',
+        element: <AiDigest />
       },
       {
         path: 'api-keys',

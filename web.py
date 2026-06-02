@@ -27,6 +27,7 @@ from apis.api_key import router as api_key_router
 from apis.tag_clusters import router as tag_cluster_router
 from apis.mcp import router as mcp_router
 from apis.hot_topics import router as hot_topics_router
+from apis.ai_digest import router as ai_digest_router
 import apis
 import os
 from core.config import cfg,VERSION,API_BASE
@@ -243,6 +244,7 @@ api_router.include_router(dashboard_router)
 api_router.include_router(api_key_router)
 api_router.include_router(tag_cluster_router)
 api_router.include_router(hot_topics_router)
+api_router.include_router(ai_digest_router)
 
 # 添加独立的健康检查端点（用于 Docker healthcheck）
 # /api/health：compose healthcheck、负载均衡探活常用
