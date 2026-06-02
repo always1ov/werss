@@ -187,7 +187,7 @@ class ArticleFilterEngine:
                     system=system_prompt,
                     messages=[{"role": "user", "content": user_prompt}],
                 )
-                content = (response.content[0].text if response.content else None) or "{}"
+                content = (next((b.text for b in response.content if hasattr(b, "text")), None)) or "{}"
                 # 剥离可能的 markdown 代码块
                 fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", content)
                 if fence:

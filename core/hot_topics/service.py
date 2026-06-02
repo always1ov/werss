@@ -104,7 +104,7 @@ async def call_llm_clustering(
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_prompt}],
             )
-            result = response.content[0].text if response.content else None
+            result = next((b.text for b in response.content if hasattr(b, "text")), None)
         else:
             if not OPENAI_AVAILABLE:
                 raise RuntimeError("openai 模块未安装")

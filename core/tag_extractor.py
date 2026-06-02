@@ -318,7 +318,7 @@ class TagExtractor:
                     system=system_content,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                raw = (response.content[0].text if response.content else None) or ""
+                raw = (next((b.text for b in response.content if hasattr(b, "text")), None)) or ""
                 result = raw.strip()
                 if not result:
                     logger.error("Anthropic 返回内容为空")
