@@ -86,9 +86,15 @@ def _fetch_articles(window_hours: int, max_articles: int) -> List[Dict[str, Any]
         )
         articles = []
         for article, feed in rows:
+            # 优先用正文，无正文则用 description
+            content_raw = article.content or article.description or ""
+            # 去除 HTML 标签（简单处理）
+            import re as _re
+            content_clean = _re.sub(r"<[^>]+>", "", content_raw).strip()
+            snippet = content_clean[:400] if content_clean else ""
             articles.append({
                 "title": article.title or "",
-                "description": (article.description or "")[:200],
+                "snippet": snippet,
                 "url": article.url or "",
                 "mp_name": (feed.mp_name if feed else "") or "未知公众号",
                 "publish_time": (
@@ -139,22 +145,23 @@ async def _call_ai(system_prompt: str, user_prompt: str) -> str:
 def _article_list_text(articles: List[Dict]) -> str:
     lines = []
     for a in articles:
-        line = f"- [{a['mp_name']}] {a['title']}"
-        if a.get("description"):
-            line += f"：{a['description']}"
+        line = f"- 【{a['mp_name']}】{a['title']}"
+        if a.get("snippet"):
+            line += f"\n  摘要：{a['snippet']}"
         lines.append(line)
     return "\n".join(lines)
 
 
 async def _summarize_by_topic(articles: List[Dict]) -> str:
     system = (
-        "你是资深新闻编辑，擅长从大量文章中提炼出关键热点主题。"
-        "输出格式严格遵循 Markdown，层级清晰，语言简洁，不要废话。"
+        "你是资深新闻编辑。用户会提供一批微信公众号文章的标题和摘要，"
+        "你必须完全基于这些提供的内容进行分析，不要依赖外部知识。"
+        "输出格式严格遵循 Markdown，语言简洁。"
     )
     user = (
-        f"以下是来自微信公众号的 {len(articles)} 篇文章列表：\n\n"
+        f"以下是 {len(articles)} 篇微信公众号文章的标题和摘要，请直接基于这些内容分析：\n\n"
         f"{_article_list_text(articles)}\n\n"
-        "请将这些文章按主题聚合，找出 3-8 个关键主题，每个主题写 1-3 条核心要点。\n"
+        "请将上述文章按主题聚合，找出 3-8 个关键主题，每个主题写 1-3 条核心要点。\n"
         "输出格式（Markdown）：\n"
         "## 📌 主题名称（N篇）\n"
         "- 要点一\n"
@@ -172,12 +179,19 @@ async def _summarize_by_feed(articles: List[Dict]) -> str:
     lines = []
     for mp_name, arts in by_feed.items():
         titles = "、".join(a["title"] for a in arts[:5] if a["title"])
-        lines.append(f"**{mp_name}**（{len(arts)}篇）：{titles}")
+        snippets = " ".join(a["snippet"][:80] for a in arts[:3] if a.get("snippet"))
+        entry = f"**{mp_name}**（{len(arts)}篇）：{titles}"
+        if snippets:
+            entry += f"\n  内容摘要：{snippets}"
+        lines.append(entry)
     feed_text = "\n".join(lines)
 
-    system = "你是简报助手，用简洁语言概括各公众号今日内容。"
+    system = (
+        "你是简报助手。用户提供了各公众号的文章标题和摘要，"
+        "请完全基于这些提供的内容作概括，不要依赖外部知识。"
+    )
     user = (
-        f"以下是各公众号发布的文章情况：\n\n{feed_text}\n\n"
+        f"以下是各公众号今日发布的文章（含标题和摘要）：\n\n{feed_text}\n\n"
         "请为每个公众号写一句话概括今日内容重点（20字以内）。\n"
         "输出格式（Markdown）：\n"
         "**公众号名**：概括语句\n\n"
@@ -187,11 +201,14 @@ async def _summarize_by_feed(articles: List[Dict]) -> str:
 
 
 async def _summarize_overall(articles: List[Dict]) -> str:
-    system = "你是新闻摘要助手，善于从大量文章中提炼一段全局综述。"
+    system = (
+        "你是新闻摘要助手。用户提供了一批文章的标题和摘要，"
+        "请完全基于这些提供的内容写综述，不要依赖外部知识，不要说'不清楚内容'。"
+    )
     user = (
-        f"以下是微信公众号的 {len(articles)} 篇文章（部分展示）：\n\n"
+        f"以下是 {len(articles)} 篇微信公众号文章的标题和摘要：\n\n"
         f"{_article_list_text(articles[:50])}\n\n"
-        "请用 150 字以内写一段今日资讯综述，涵盖主要领域和热点，语言简练。\n"
+        "请根据以上内容，用 150 字以内写一段今日资讯综述，涵盖主要领域和热点，语言简练。\n"
         "只输出综述文字，不要任何格式标记。"
     )
     return await _call_ai(system, user)
