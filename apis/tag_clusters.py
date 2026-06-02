@@ -18,7 +18,7 @@ from core.tag_cluster import rebuild_tag_clusters
 try:
     from core.visualization import compute_2d_layout, normalize_coordinates, compute_cluster_overview
     _VISUALIZATION_AVAILABLE = True
-except ImportError:
+except (ImportError, Exception):
     _VISUALIZATION_AVAILABLE = False
 from .base import success_response, error_response
 

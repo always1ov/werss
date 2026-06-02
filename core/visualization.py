@@ -2,6 +2,7 @@
 Embedding聚类可视化模块
 提供降维算法和2D布局计算功能
 """
+from __future__ import annotations
 
 import os
 from typing import Any, Dict, List, Tuple

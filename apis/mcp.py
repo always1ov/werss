@@ -23,7 +23,7 @@ from core.print import print_warning
 try:
     from core.visualization import compute_2d_layout, normalize_coordinates
     _VISUALIZATION_AVAILABLE = True
-except ImportError:
+except (ImportError, Exception):
     _VISUALIZATION_AVAILABLE = False
 
 router = APIRouter(prefix="/mcp", tags=["MCP"])
