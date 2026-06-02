@@ -4,7 +4,6 @@ from typing import Optional
 from .base import EmbeddingProvider
 from .bigmodel import BigModelEmbeddingProvider
 from .doubao import DoubaoEmbeddingProvider
-from .minimax import MiniMaxEmbeddingProvider
 
 
 def _get_dimensions() -> Optional[int]:
@@ -65,6 +64,6 @@ def get_embedding_provider() -> EmbeddingProvider:
         model = os.getenv("MINIMAX_EMBEDDING_MODEL", "embo-01").strip()
         if not api_key:
             raise ValueError("MINIMAX_API_KEY 未配置")
-        return MiniMaxEmbeddingProvider(api_key=api_key, base_url=base_url, model_name=model, dimensions=dimensions)
+        return BigModelEmbeddingProvider(api_key=api_key, base_url=base_url, model_name=model, dimensions=dimensions)
 
     raise ValueError(f"不支持的 embedding provider: {provider}")
