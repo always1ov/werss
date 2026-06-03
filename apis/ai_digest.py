@@ -99,7 +99,8 @@ async def get_config(current_user: dict = Depends(get_current_user)):
 
 @router.put("/config", summary="更新 AI 日报配置")
 async def update_config(data: AiDigestConfigUpdate, current_user: dict = Depends(get_current_user)):
-    db = DB.get_session()
+    # 使用全新 session 避免 scoped_session 在 asyncio 同线程复用时的 identity map 污染
+    db = DB.session_factory()
     try:
         if data.enabled is not None:
             _upsert_config(db, "ai_digest.enabled", "true" if data.enabled else "false", "AI 日报：是否启用定时推送")
@@ -114,11 +115,14 @@ async def update_config(data: AiDigestConfigUpdate, current_user: dict = Depends
             _upsert_config(db, "ai_digest.formats", json.dumps(formats, ensure_ascii=False), "AI 日报：摘要格式列表")
         if data.webhook_url is not None:
             _upsert_config(db, "ai_digest.webhook_url", data.webhook_url.strip(), "AI 日报：额外 webhook URL（可选）")
+        db.flush()
         db.commit()
         _reload()
         return success_response(data=_read_config(), message="配置已保存")
     except Exception as e:
         db.rollback()
+        from core.log import logger
+        logger.error(f"AI 日报配置保存失败: {e}", exc_info=True)
         return error_response(500, str(e))
     finally:
         db.close()

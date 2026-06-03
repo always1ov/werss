@@ -38,7 +38,7 @@ def _load_cache() -> Dict[str, str]:
             return _cache
         from core.models.config_management import ConfigManagement
 
-        session = DB.get_session()
+        session = DB.session_factory()
         try:
             rows = session.query(ConfigManagement).all()
             _cache = {
