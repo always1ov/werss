@@ -28,21 +28,29 @@ def register_ai_digest_job(scheduler: TaskScheduler) -> None:
     cron_expr = (cfg.get("ai_digest.cron", "0 8 * * *") or "0 8 * * *").strip()
 
     def run_digest():
-        window_hours = int(cfg.get("ai_digest.window_hours", 24) or 24)
-        window_hours = max(1, min(window_hours, 168))
-        max_articles = int(cfg.get("ai_digest.max_articles", 100) or 100)
-        max_articles = max(10, min(max_articles, 500))
-        formats_raw = cfg.get("ai_digest.formats", '["by_topic"]') or '["by_topic"]'
+        from apis.ai_digest import _digest_running
+        import apis.ai_digest as _ai_digest_mod
+        if _digest_running:
+            logger.warning("AI 日报：上次任务仍在运行，跳过本次定时触发")
+            return
+        _ai_digest_mod._digest_running = True
         try:
-            formats = json.loads(formats_raw) if isinstance(formats_raw, str) else list(formats_raw)
-        except Exception:
-            formats = ["by_topic"]
+            window_hours = int(cfg.get("ai_digest.window_hours", 24) or 24)
+            window_hours = max(1, min(window_hours, 168))
+            max_articles = int(cfg.get("ai_digest.max_articles", 100) or 100)
+            max_articles = max(10, min(max_articles, 500))
+            formats_raw = cfg.get("ai_digest.formats", '["by_topic"]') or '["by_topic"]'
+            try:
+                formats = json.loads(formats_raw) if isinstance(formats_raw, str) else list(formats_raw)
+            except Exception:
+                formats = ["by_topic"]
 
-        from core.ai_digest.service import run_ai_digest
-        try:
+            from core.ai_digest.service import run_ai_digest
             asyncio.run(run_ai_digest(window_hours=window_hours, max_articles=max_articles, formats=formats))
         except Exception as e:
             logger.error(f"AI 日报执行失败: {e}")
+        finally:
+            _ai_digest_mod._digest_running = False
 
     job_id = scheduler.add_cron_job(
         run_digest,

@@ -128,20 +128,32 @@ async def update_config(data: AiDigestConfigUpdate, current_user: dict = Depends
         db.close()
 
 
-async def _bg_run_digest():
-    window_hours = max(1, min(int(cfg.get("ai_digest.window_hours", 24) or 24), 168))
-    max_articles = max(10, min(int(cfg.get("ai_digest.max_articles", 100) or 100), 500))
-    formats_raw = cfg.get("ai_digest.formats", '["by_topic"]') or '["by_topic"]'
-    try:
-        formats = json.loads(formats_raw) if isinstance(formats_raw, str) else list(formats_raw)
-    except Exception:
-        formats = ["by_topic"]
+_digest_running = False
 
-    from core.ai_digest.service import run_ai_digest
-    await run_ai_digest(window_hours=window_hours, max_articles=max_articles, formats=formats)
+
+async def _bg_run_digest():
+    global _digest_running
+    if _digest_running:
+        return
+    _digest_running = True
+    try:
+        window_hours = max(1, min(int(cfg.get("ai_digest.window_hours", 24) or 24), 168))
+        max_articles = max(10, min(int(cfg.get("ai_digest.max_articles", 100) or 100), 500))
+        formats_raw = cfg.get("ai_digest.formats", '["by_topic"]') or '["by_topic"]'
+        try:
+            formats = json.loads(formats_raw) if isinstance(formats_raw, str) else list(formats_raw)
+        except Exception:
+            formats = ["by_topic"]
+
+        from core.ai_digest.service import run_ai_digest
+        await run_ai_digest(window_hours=window_hours, max_articles=max_articles, formats=formats)
+    finally:
+        _digest_running = False
 
 
 @router.post("/run", summary="立即触发 AI 日报（后台执行）")
 async def run_now(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    if _digest_running:
+        return error_response(409, "AI 日报正在生成中，请稍后再试")
     background_tasks.add_task(_bg_run_digest)
     return success_response(message="AI 日报已开始生成，请查看服务器日志获取结果")
