@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { getAiDigestConfig, updateAiDigestConfig, runAiDigestNow } from '@/api/aiDigest'
 import type { AiDigestConfig, DigestFormat } from '@/types/aiDigest'
@@ -19,32 +18,22 @@ import {
   Clock,
   Settings2,
   Webhook,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 
-type CronPreset = 'multi_time' | 'every_6h' | 'every_12h' | 'custom'
-
-// 可选时间点：6:00 ~ 22:00
-const HOUR_OPTIONS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
-
-function hoursToLabel(h: number) {
-  return `${h}:00`
+// "MM HH * * *" <-> HH:MM
+function cronToTime(cron: string): string {
+  const m = cron.trim().match(/^(\d+)\s+(\d+)\s+\*\s+\*\s+\*$/)
+  if (!m) return '08:00'
+  const mm = m[1].padStart(2, '0')
+  const hh = m[2].padStart(2, '0')
+  return `${hh}:${mm}`
 }
 
-function cronFromHours(hours: number[]): string {
-  if (hours.length === 0) return '0 8 * * *'
-  return `0 ${[...hours].sort((a, b) => a - b).join(',')} * * *`
-}
-
-function detectPreset(cron: string): { preset: CronPreset; hours: number[] } {
-  if (cron === '0 */6 * * *') return { preset: 'every_6h', hours: [] }
-  if (cron === '0 */12 * * *') return { preset: 'every_12h', hours: [] }
-  // 单个或多个小时：0 8 * * * 或 0 8,12,18 * * *
-  const m = cron.match(/^0 ([\d,]+) \* \* \*$/)
-  if (m) {
-    const hours = m[1].split(',').map(Number).filter(h => !isNaN(h))
-    return { preset: 'multi_time', hours }
-  }
-  return { preset: 'custom', hours: [8] }
+function timeToCron(hhmm: string): string {
+  const [hh, mm] = hhmm.split(':')
+  return `${parseInt(mm || '0', 10)} ${parseInt(hh || '8', 10)} * * *`
 }
 
 const FORMAT_OPTIONS: { value: DigestFormat; label: string; desc: string }[] = [
@@ -60,15 +49,16 @@ const AiDigest: React.FC = () => {
   const [running, setRunning] = useState(false)
   const [config, setConfig] = useState<AiDigestConfig>({
     enabled: false,
-    cron: '0 8 * * *',
+    schedules: ['0 8 * * *'],
     window_hours: 24,
     max_articles: 100,
     formats: ['by_topic'],
     webhook_url: '',
-    next_run: null,
+    next_runs: [],
   })
-  const [cronPreset, setCronPreset] = useState<CronPreset>('multi_time')
-  const [selectedHours, setSelectedHours] = useState<number[]>([8])
+
+  // 本地编辑用的时间字符串列表，格式 "HH:MM"
+  const [times, setTimes] = useState<string[]>(['08:00'])
 
   const loadConfig = async () => {
     setLoading(true)
@@ -76,9 +66,7 @@ const AiDigest: React.FC = () => {
       const res = await getAiDigestConfig() as any
       const data: AiDigestConfig = res?.data ?? res
       setConfig(data)
-      const { preset, hours } = detectPreset(data.cron)
-      setCronPreset(preset)
-      if (hours.length > 0) setSelectedHours(hours)
+      setTimes((data.schedules ?? ['0 8 * * *']).map(cronToTime))
     } catch {
       toast({ variant: 'destructive', title: '错误', description: '加载配置失败' })
     } finally {
@@ -97,24 +85,18 @@ const AiDigest: React.FC = () => {
     }))
   }
 
-  const handlePresetChange = (preset: CronPreset) => {
-    setCronPreset(preset)
-    if (preset === 'every_6h') setConfig(prev => ({ ...prev, cron: '0 */6 * * *' }))
-    if (preset === 'every_12h') setConfig(prev => ({ ...prev, cron: '0 */12 * * *' }))
-    if (preset === 'multi_time') {
-      const hrs = selectedHours.length > 0 ? selectedHours : [8]
-      setSelectedHours(hrs)
-      setConfig(prev => ({ ...prev, cron: cronFromHours(hrs) }))
-    }
+  const handleTimeChange = (idx: number, val: string) => {
+    setTimes(prev => {
+      const next = [...prev]
+      next[idx] = val
+      return next
+    })
   }
 
-  const handleHourToggle = (hour: number) => {
-    setSelectedHours(prev => {
-      const next = prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour]
-      const hrs = next.length > 0 ? next : [hour]
-      setConfig(c => ({ ...c, cron: cronFromHours(hrs) }))
-      return hrs
-    })
+  const addTime = () => setTimes(prev => [...prev, '08:00'])
+
+  const removeTime = (idx: number) => {
+    setTimes(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)
   }
 
   const save = async () => {
@@ -122,14 +104,15 @@ const AiDigest: React.FC = () => {
       toast({ variant: 'destructive', title: '请至少选择一种摘要格式' })
       return
     }
-    if (cronPreset === 'multi_time' && selectedHours.length === 0) {
-      toast({ variant: 'destructive', title: '请至少选择一个推送时间点' })
+    const schedules = times.filter(t => /^\d{1,2}:\d{2}$/.test(t)).map(timeToCron)
+    if (schedules.length === 0) {
+      toast({ variant: 'destructive', title: '请至少填写一个推送时间' })
       return
     }
     setSaving(true)
     try {
-      await updateAiDigestConfig(config)
-      toast({ title: '已保存', description: '配置已更新，定时任务将在下次启动时生效' })
+      await updateAiDigestConfig({ ...config, schedules })
+      toast({ title: '已保存', description: '配置已更新，定时任务将在下次触发时生效' })
       await loadConfig()
     } catch (e: any) {
       toast({ variant: 'destructive', title: '保存失败', description: e?.message || '未知错误' })
@@ -170,7 +153,7 @@ const AiDigest: React.FC = () => {
         </p>
       </div>
 
-      {/* 启用开关 + 下次执行 */}
+      {/* 启用开关 */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -186,88 +169,54 @@ const AiDigest: React.FC = () => {
             />
           </div>
         </CardHeader>
-        {config.next_run && (
-          <CardContent className="pt-0">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span>下次执行：{config.next_run}</span>
-            </div>
+        {config.next_runs && config.next_runs.length > 0 && (
+          <CardContent className="pt-0 space-y-1">
+            {config.next_runs.map((nr, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
+                <span>下次执行 #{i + 1}：{nr}</span>
+              </div>
+            ))}
           </CardContent>
         )}
       </Card>
 
-      {/* 定时设置 */}
+      {/* 定时配置 */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Clock className="h-4 w-4" />
-            定时配置
+            推送时间
           </CardTitle>
+          <CardDescription>每天在以下时间点推送，精确到分钟</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>执行方式</Label>
-            <Select value={cronPreset} onValueChange={v => handlePresetChange(v as CronPreset)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="multi_time">指定时间点</SelectItem>
-                <SelectItem value="every_6h">每 6 小时</SelectItem>
-                <SelectItem value="every_12h">每 12 小时</SelectItem>
-                <SelectItem value="custom">自定义 cron</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {cronPreset === 'multi_time' && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">点击选择每天推送的时间点（可多选）</Label>
-              <div className="flex flex-wrap gap-2">
-                {HOUR_OPTIONS.map(h => {
-                  const active = selectedHours.includes(h)
-                  return (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => handleHourToggle(h)}
-                      className={`px-3 py-1 rounded-full text-sm border transition-colors ${
-                        active
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-background text-muted-foreground border-border hover:border-primary/50'
-                      }`}
-                    >
-                      {hoursToLabel(h)}
-                    </button>
-                  )
-                })}
-              </div>
-              {selectedHours.length === 0 && (
-                <p className="text-xs text-destructive">请至少选择一个时间点</p>
-              )}
+        <CardContent className="space-y-3">
+          {times.map((t, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <Input
+                type="time"
+                value={t}
+                onChange={e => handleTimeChange(idx, e.target.value)}
+                className="w-36"
+              />
+              <span className="text-sm text-muted-foreground flex-1">
+                {timeToCron(t)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => removeTime(idx)}
+                disabled={times.length <= 1}
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
-          )}
-
-          {(cronPreset === 'every_6h' || cronPreset === 'every_12h') && (
-            <p className="text-xs text-muted-foreground">
-              建议改用「指定时间点」，避免凌晨推送
-            </p>
-          )}
-
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">cron 表达式（分 时 日 月 周）</Label>
-            <Input
-              value={config.cron}
-              onChange={e => {
-                const v = e.target.value
-                setConfig(prev => ({ ...prev, cron: v }))
-                const { preset, hours } = detectPreset(v)
-                setCronPreset(preset)
-                if (preset === 'multi_time' && hours.length > 0) setSelectedHours(hours)
-              }}
-              placeholder="0 8,12,18 * * *"
-            />
-          </div>
+          ))}
+          <Button variant="outline" size="sm" onClick={addTime} className="mt-1">
+            <Plus className="h-4 w-4 mr-1" />
+            添加时间
+          </Button>
         </CardContent>
       </Card>
 
@@ -282,7 +231,7 @@ const AiDigest: React.FC = () => {
         <CardContent className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="window-hours">时间窗口（小时）</Label>
+              <Label htmlFor="window-hours">最大回溯窗口（小时）</Label>
               <Input
                 id="window-hours"
                 type="number"
@@ -291,7 +240,7 @@ const AiDigest: React.FC = () => {
                 value={config.window_hours}
                 onChange={e => setConfig(prev => ({ ...prev, window_hours: Math.min(168, Math.max(1, Number(e.target.value))) }))}
               />
-              <p className="text-xs text-muted-foreground">抓取最近几小时内的文章，1-168</p>
+              <p className="text-xs text-muted-foreground">首次运行兜底，平时以上次推送时间为准</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="max-articles">最大文章数</Label>
@@ -351,9 +300,6 @@ const AiDigest: React.FC = () => {
               value={config.webhook_url}
               onChange={e => setConfig(prev => ({ ...prev, webhook_url: e.target.value }))}
             />
-            <p className="text-xs text-muted-foreground">
-              留空则仅使用环境变量中已配置的 webhook；填写后会同时推送到这个地址
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -369,7 +315,7 @@ const AiDigest: React.FC = () => {
           立即生成并推送
         </Button>
         <Badge variant="secondary" className="ml-auto">
-          {config.formats.length} 种格式
+          {times.length} 个时间点 · {config.formats.length} 种格式
         </Badge>
       </div>
     </div>
