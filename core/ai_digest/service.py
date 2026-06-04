@@ -64,13 +64,25 @@ def _get_ai_config():
 
 
 def _fetch_articles(window_hours: int, max_articles: int) -> List[Dict[str, Any]]:
-    """从数据库获取最近 window_hours 小时的文章。"""
+    """从数据库获取文章：优先从上次推送时间起，最多回溯 window_hours 小时。"""
     from core.database import get_db
     from core.models.article import Article
     from core.models.feed import Feed
     from core.models.base import DATA_STATUS
 
-    since_ts = int((datetime.now() - timedelta(hours=window_hours)).timestamp())
+    # 最大回溯边界
+    max_since_ts = int((datetime.now() - timedelta(hours=window_hours)).timestamp())
+
+    # 上次推送时间戳（存在则用它，避免重复推送同一批文章）
+    try:
+        last_ts_str = cfg.get("ai_digest.last_run_ts", None, silent=True)
+        last_run_ts = int(last_ts_str) if last_ts_str else 0
+    except Exception:
+        last_run_ts = 0
+
+    # 取两者中更晚的时间作为起点（首次运行时 last_run_ts=0，退化为 window_hours 窗口）
+    since_ts = max(max_since_ts, last_run_ts)
+
     db = get_db()
     try:
         rows = (
@@ -86,9 +98,7 @@ def _fetch_articles(window_hours: int, max_articles: int) -> List[Dict[str, Any]
         )
         articles = []
         for article, feed in rows:
-            # 优先用正文，无正文则用 description
             content_raw = article.content or article.description or ""
-            # 去除 HTML 标签（简单处理）
             import re as _re
             content_clean = _re.sub(r"<[^>]+>", "", content_raw).strip()
             snippet = content_clean[:400] if content_clean else ""
@@ -105,6 +115,34 @@ def _fetch_articles(window_hours: int, max_articles: int) -> List[Dict[str, Any]
         return articles
     finally:
         db.close()
+
+
+def _save_last_run_ts() -> None:
+    """记录本次推送时间戳，供下次运行去重。"""
+    try:
+        from core.db import DB
+        from core.models.config_management import ConfigManagement
+        ts = str(int(datetime.now().timestamp()))
+        session = DB.session_factory()
+        try:
+            row = session.query(ConfigManagement).filter(
+                ConfigManagement.config_key == "ai_digest.last_run_ts"
+            ).first()
+            if row:
+                row.config_value = ts
+            else:
+                session.add(ConfigManagement(
+                    config_key="ai_digest.last_run_ts",
+                    config_value=ts,
+                    description="AI 日报：上次推送时间戳（用于去重）",
+                ))
+            session.commit()
+        finally:
+            session.close()
+        from core.config_overrides import invalidate_config_overrides_cache
+        invalidate_config_overrides_cache()
+    except Exception as e:
+        logger.warning(f"AI 日报：记录 last_run_ts 失败: {e}")
 
 
 async def _call_ai(system_prompt: str, user_prompt: str) -> str:
@@ -225,15 +263,25 @@ async def run_ai_digest(
 
     print_info(f"AI 日报开始：window_hours={window_hours}, max_articles={max_articles}, formats={formats}")
 
+    # 计算实际起始时间（用于标题展示）
+    try:
+        last_ts_str = cfg.get("ai_digest.last_run_ts", None, silent=True)
+        last_run_ts = int(last_ts_str) if last_ts_str else 0
+    except Exception:
+        last_run_ts = 0
+    max_since_ts = int((datetime.now() - timedelta(hours=window_hours)).timestamp())
+    actual_since_ts = max(max_since_ts, last_run_ts)
+    since_label = datetime.fromtimestamp(actual_since_ts).strftime("%m-%d %H:%M")
+
     articles = _fetch_articles(window_hours, max_articles)
     if not articles:
-        print_info("AI 日报：时间窗口内没有文章，跳过推送")
+        print_info("AI 日报：时间窗口内没有新文章，跳过推送")
         return "no_articles"
 
     print_info(f"AI 日报：获取到 {len(articles)} 篇文章，开始生成摘要")
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    sections = [f"**📰 AI 日报 · {now_str}**（共 {len(articles)} 篇，最近 {window_hours} 小时）"]
+    sections = [f"**📰 AI 日报 · {now_str}**（共 {len(articles)} 篇，{since_label} 至今）"]
 
     for fmt in formats:
         try:
@@ -275,4 +323,9 @@ async def run_ai_digest(
             logger.warning(f"AI 日报推送失败（{url[:30]}...）: {e}")
 
     print_success(f"AI 日报：已推送到 {sent}/{len(webhook_urls)} 个 webhook")
+
+    # 至少推送成功一次，才记录时间戳（防止全部失败时下次仍能重试同批文章）
+    if sent > 0:
+        _save_last_run_ts()
+
     return full_message
