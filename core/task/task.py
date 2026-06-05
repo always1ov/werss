@@ -161,7 +161,10 @@ class TaskScheduler:
                     trigger=trigger,
                     args=args,
                     kwargs=kwargs,
-                    id=str(job_id)
+                    id=str(job_id),
+                    replace_existing=True,
+                    coalesce=True,
+                    max_instances=1,
                 )
                 self._jobs[job.id] = job
                 

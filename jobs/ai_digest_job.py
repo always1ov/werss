@@ -47,10 +47,9 @@ def register_ai_digest_job(scheduler: TaskScheduler) -> None:
     def make_run_digest():
         def run_digest():
             import apis.ai_digest as _mod
-            if _mod._digest_running:
+            if not _mod._digest_lock.acquire(blocking=False):
                 logger.warning("AI 日报：上次任务仍在运行，跳过本次定时触发")
                 return
-            _mod._digest_running = True
             try:
                 window_hours = int(cfg.get("ai_digest.window_hours", 24) or 24)
                 window_hours = max(1, min(window_hours, 168))
@@ -67,7 +66,7 @@ def register_ai_digest_job(scheduler: TaskScheduler) -> None:
             except Exception as e:
                 logger.error(f"AI 日报执行失败: {e}")
             finally:
-                _mod._digest_running = False
+                _mod._digest_lock.release()
         return run_digest
 
     for i, cron_expr in enumerate(schedules):

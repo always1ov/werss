@@ -1,6 +1,7 @@
 """AI 日报 API：配置管理与手动触发。"""
 import json
 import re
+import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -148,14 +149,12 @@ async def update_config(data: AiDigestConfigUpdate, current_user: dict = Depends
         db.close()
 
 
-_digest_running = False
+_digest_lock = threading.Lock()
 
 
 async def _bg_run_digest():
-    global _digest_running
-    if _digest_running:
+    if not _digest_lock.acquire(blocking=False):
         return
-    _digest_running = True
     try:
         window_hours = max(1, min(int(cfg.get("ai_digest.window_hours", 24) or 24), 168))
         max_articles = max(10, min(int(cfg.get("ai_digest.max_articles", 100) or 100), 500))
@@ -168,12 +167,12 @@ async def _bg_run_digest():
         from core.ai_digest.service import run_ai_digest
         await run_ai_digest(window_hours=window_hours, max_articles=max_articles, formats=formats)
     finally:
-        _digest_running = False
+        _digest_lock.release()
 
 
 @router.post("/run", summary="立即触发 AI 日报（后台执行）")
 async def run_now(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
-    if _digest_running:
+    if _digest_lock.locked():
         return error_response(409, "AI 日报正在生成中，请稍后再试")
     background_tasks.add_task(_bg_run_digest)
     return success_response(message="AI 日报已开始生成，请查看服务器日志获取结果")
