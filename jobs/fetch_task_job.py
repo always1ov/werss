@@ -80,8 +80,14 @@ def fetch_one_feed(feed: Feed, max_pages: int) -> int:
         return 0
 
 
-def do_fetch_task(task: FetchTask):
-    """执行一条抓取任务"""
+def do_fetch_task(task_id: str):
+    """执行一条抓取任务（接受 task_id，内部重新查询避免跨线程 DetachedInstanceError）"""
+    tasks = get_active_fetch_tasks(task_id)
+    if not tasks:
+        print_warning(f"抓取任务[{task_id}]不存在或未启用")
+        return
+    task = tasks[0]
+
     if not _check_session_valid():
         return
 
@@ -100,10 +106,17 @@ def do_fetch_task(task: FetchTask):
     print_success(f"【抓取任务】{task.name} 完成，共更新 {total} 条")
 
 
-def add_fetch_to_queue(task: FetchTask):
-    """把抓取任务塞进任务队列（按队列顺序串行执行）"""
-    TaskQueue.add_task(do_fetch_task, task)
-    print_info(f"【抓取任务】{task.name} 已入队列")
+def add_fetch_to_queue(task_id: str):
+    """把抓取任务塞进任务队列（传 task_id 避免跨线程 ORM 对象失效）"""
+    TaskQueue.add_task(do_fetch_task, task_id)
+    print_info(f"【抓取任务】{task_id} 已入队列")
+
+
+def _make_fetch_trigger(task_id: str):
+    """返回一个只捕获 task_id 的调度触发函数，避免 ORM 对象跨线程失效。"""
+    def trigger():
+        add_fetch_to_queue(task_id)
+    return trigger
 
 
 def start_fetch_jobs(task_id: Union[str, list, None] = None):
@@ -118,9 +131,8 @@ def start_fetch_jobs(task_id: Union[str, list, None] = None):
             print_error(f"抓取任务[{task.id}]没有设置 cron 表达式")
             continue
         scheduler.add_cron_job(
-            add_fetch_to_queue,
+            _make_fetch_trigger(task.id),
             cron_expr=task.cron_exp,
-            args=[task],
             job_id=f"fetch_{task.id}",
             tag="定时抓取",
         )
@@ -145,5 +157,5 @@ def run_fetch_task(task_id: str) -> Optional[List[FetchTask]]:
         print_warning(f"抓取任务[{task_id}]不存在或未启用")
         return None
     for task in tasks:
-        add_fetch_to_queue(task)
+        add_fetch_to_queue(task.id)
     return tasks

@@ -68,7 +68,7 @@ def start_sync_content():
     scheduler.clear_all_jobs()
     def do_sync():
         task_queue.add_task(fetch_articles_without_content)
-    job_id=scheduler.add_cron_job(do_sync,cron_expr=cron_exp)
+    job_id=scheduler.add_cron_job(do_sync,cron_expr=cron_exp,job_id="fetch_articles_without_content")
     print_success(f"已添自动同步文章内容任务: {job_id}")
     scheduler.start()
 if __name__ == "__main__":
