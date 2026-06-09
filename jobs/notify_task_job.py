@@ -92,8 +92,14 @@ def _collect_feed_articles(feed: Feed) -> dict:
         session.close()
 
 
-def do_notify_task(task: NotifyTask):
-    """执行一条推送任务"""
+def do_notify_task(task_id: str):
+    """执行一条推送任务（接受 task_id，内部重新查询避免跨线程 DetachedInstanceError）"""
+    tasks = get_active_notify_tasks(task_id)
+    if not tasks:
+        print_warning(f"推送任务[{task_id}]不存在或未启用")
+        return
+    task = tasks[0]
+
     if not task.web_hook_url:
         print_error(f"推送任务[{task.name}]未设置 webhook 地址，跳过")
         return
@@ -166,10 +172,12 @@ def do_notify_task(task: NotifyTask):
         traceback.print_exc()
 
 
-def add_notify_to_queue(task: NotifyTask):
-    """把推送任务入队"""
-    TaskQueue.add_task(do_notify_task, task)
-    print_info(f"【推送任务】{task.name} 已入队列")
+def _make_notify_trigger(task_id: str):
+    """返回一个只捕获 task_id 的调度触发函数，避免 ORM 对象跨线程失效。"""
+    def trigger():
+        TaskQueue.add_task(do_notify_task, task_id)
+        print_info(f"【推送任务】{task_id} 已入队列")
+    return trigger
 
 
 def start_notify_jobs(task_id: Union[str, list, None] = None):
@@ -184,9 +192,8 @@ def start_notify_jobs(task_id: Union[str, list, None] = None):
             print_error(f"推送任务[{task.id}]没有设置 cron 表达式")
             continue
         scheduler.add_cron_job(
-            add_notify_to_queue,
+            _make_notify_trigger(task.id),
             cron_expr=task.cron_exp,
-            args=[task],
             job_id=f"notify_{task.id}",
             tag="定时推送",
         )
@@ -211,5 +218,6 @@ def run_notify_task(task_id: str) -> Optional[List[NotifyTask]]:
         print_warning(f"推送任务[{task_id}]不存在或未启用")
         return None
     for task in tasks:
-        add_notify_to_queue(task)
+        TaskQueue.add_task(do_notify_task, task.id)
+        print_info(f"【推送任务】{task.name} 已入队列")
     return tasks
