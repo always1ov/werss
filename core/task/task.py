@@ -165,6 +165,7 @@ class TaskScheduler:
                     replace_existing=True,
                     coalesce=True,
                     max_instances=1,
+                    misfire_grace_time=1,
                 )
                 self._jobs[job.id] = job
                 

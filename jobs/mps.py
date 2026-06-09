@@ -717,11 +717,9 @@ def reload_job():
     register_hot_topics_job(scheduler)
     from jobs.ai_digest_job import register_ai_digest_job
     register_ai_digest_job(scheduler)
-    # 新任务
+    # 新任务（仅重载抓取；推送任务有独立 scheduler，由 apis/notify_task.py 自行重载）
     from jobs.fetch_task_job import reload_fetch_jobs
-    from jobs.notify_task_job import reload_notify_jobs
     reload_fetch_jobs()
-    reload_notify_jobs()
 
 def run(job_id:str=None,isTest=False):
     from .taskmsg import get_message_task
