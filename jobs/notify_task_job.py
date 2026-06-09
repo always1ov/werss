@@ -5,7 +5,8 @@
 不做任何文章采集。
 """
 import json
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from typing import List, Union, Optional
 
 import core.db as db
@@ -19,6 +20,19 @@ from core.task import TaskScheduler
 
 _db = db.Db(tag="推送任务")
 scheduler = TaskScheduler()
+
+# 每个 task_id 对应一把锁 + 上次入队时间，防止 60 秒内重复触发
+_task_last_queued: dict = {}
+_task_last_queued_lock = threading.Lock()
+
+def _try_enqueue(task_id: str, cooldown_seconds: int = 60) -> bool:
+    """返回 True 表示可以入队；60 秒内重复调用返回 False。"""
+    with _task_last_queued_lock:
+        last = _task_last_queued.get(task_id)
+        if last and datetime.now() - last < timedelta(seconds=cooldown_seconds):
+            return False
+        _task_last_queued[task_id] = datetime.now()
+        return True
 
 
 def get_active_notify_tasks(task_id: Union[str, list, None] = None) -> Optional[List[NotifyTask]]:
@@ -175,6 +189,9 @@ def do_notify_task(task_id: str):
 def _make_notify_trigger(task_id: str):
     """返回一个只捕获 task_id 的调度触发函数，避免 ORM 对象跨线程失效。"""
     def trigger():
+        if not _try_enqueue(task_id):
+            logger.warning(f"推送任务 {task_id} 60秒内已触发，跳过本次")
+            return
         TaskQueue.add_task(do_notify_task, task_id)
         print_info(f"【推送任务】{task_id} 已入队列")
     return trigger

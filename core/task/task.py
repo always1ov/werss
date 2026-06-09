@@ -140,7 +140,7 @@ class TaskScheduler:
                     hour=hour,
                     day=day,
                     month=month,
-                    day_of_week=day_of_week
+                    day_of_week=day_of_week,
                 )
                 
                 # 包装任务函数以捕获异常
