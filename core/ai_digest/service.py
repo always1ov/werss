@@ -156,27 +156,34 @@ async def _call_ai(system_prompt: str, user_prompt: str) -> str:
         if base_url:
             client_kwargs["base_url"] = base_url
         client = AsyncAnthropic(**client_kwargs)
-        response = await client.messages.create(
-            model=model,
-            max_tokens=2000,
-            temperature=0.3,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
+        try:
+            response = await client.messages.create(
+                model=model,
+                max_tokens=2000,
+                temperature=0.3,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+        finally:
+            # 在事件循环关闭前主动释放 httpx 连接，避免 "Event loop is closed" 报错
+            await client.close()
         return next((b.text for b in response.content if hasattr(b, "text")), "") or ""
 
     if not OPENAI_AVAILABLE:
         raise RuntimeError("openai 模块未安装")
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-    response = await client.chat.completions.create(
-        model=model,
-        temperature=0.3,
-        max_tokens=2000,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            temperature=0.3,
+            max_tokens=2000,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    finally:
+        await client.close()
     return response.choices[0].message.content or ""
 
 

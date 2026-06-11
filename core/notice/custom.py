@@ -23,5 +23,8 @@ def send_custom_message(webhook_url, title, text):
             data=json.dumps(data)
         )
         print(response.text)
+        # 自定义 webhook 以 HTTP 2xx 视为发送成功
+        return 200 <= response.status_code < 300
     except Exception as e:
         print('自定义webhook通知发送失败', e)
+        return False

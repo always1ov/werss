@@ -88,22 +88,26 @@ def do_fetch_task(task_id: str):
         return
     task = tasks[0]
 
+    # 提前把需要的属性取出为本地变量，避免抓取过程中 session 关闭/过期后
+    # 再访问 ORM 属性触发 DetachedInstanceError（懒加载刷新失败）
+    task_name = task.name
+    max_pages = int(task.max_page) if task.max_page else int(cfg.get("max_page", 1))
+
     if not _check_session_valid():
         return
 
     feeds = get_feeds_for_task(task)
     if not feeds:
-        print_warning(f"抓取任务[{task.name}]没有可处理的公众号")
+        print_warning(f"抓取任务[{task_name}]没有可处理的公众号")
         return
 
-    max_pages = int(task.max_page) if task.max_page else int(cfg.get("max_page", 1))
-    print_info(f"【抓取任务】{task.name}：开始抓取 {len(feeds)} 个公众号，每个 {max_pages} 页")
+    print_info(f"【抓取任务】{task_name}：开始抓取 {len(feeds)} 个公众号，每个 {max_pages} 页")
 
     total = 0
     for feed in feeds:
         count = fetch_one_feed(feed, max_pages)
         total += count
-    print_success(f"【抓取任务】{task.name} 完成，共更新 {total} 条")
+    print_success(f"【抓取任务】{task_name} 完成，共更新 {total} 条")
 
 
 def add_fetch_to_queue(task_id: str):

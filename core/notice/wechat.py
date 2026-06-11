@@ -27,5 +27,12 @@ def send_wechat_message(webhook_url, title, text):
             data=json.dumps(data)
         )
         print(response.text)
+        # 企业微信返回 {"errcode":0,"errmsg":"ok"} 表示发送成功
+        try:
+            result = response.json()
+        except Exception:
+            return False
+        return result.get('errcode') == 0
     except Exception as e:
         print('微信通知发送失败', e)
+        return False

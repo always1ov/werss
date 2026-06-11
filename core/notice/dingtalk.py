@@ -30,8 +30,15 @@ def send_dingtalk_message(webhook_url, title, text, is_at_all=False, at_mobiles=
             data=json.dumps(data)
         )
         print(response.text)
+        # 钉钉返回 {"errcode":0,"errmsg":"ok"} 表示发送成功
+        try:
+            result = response.json()
+        except Exception:
+            return False
+        return result.get('errcode') == 0
     except Exception as e:
         print('通知发送失败', e)
+        return False
 # 使用示例
 # markdown_text = """### 项目状态报告  
 # - **项目名称**: XX系统升级  
