@@ -760,7 +760,50 @@ def start_job(job_id:str=None):
         print_info("调度器已启动")
     else:
         print_warning("调度器已经在运行中")
+# 跨进程定时任务锁：uvicorn 多 worker（server.threads>1）时，每个 worker 进程
+# 都会执行 lifespan -> start_all_task，各自注册一套 APScheduler，导致同一 cron
+# 任务在每个进程里各触发一次（推送/AI 日报重复发送）。进程内的 Lock / 冷却字典
+# 无法跨进程去重，因此用文件锁做「leader 选举」：只有抢到锁的 worker 才注册定时任务。
+_job_leader_lock_fd = None
+
+
+def _acquire_job_leader_lock() -> bool:
+    """尝试获取跨进程定时任务锁；成功返回 True（本进程作为 leader 运行定时任务）。
+
+    非 leader 进程返回 False 并跳过定时任务注册，避免多 worker 重复触发。
+    锁文件句柄故意保留为模块级全局，使其在进程存活期间一直持有，进程退出时由
+    操作系统自动释放。
+    """
+    global _job_leader_lock_fd
+    try:
+        import os
+        import tempfile
+        lock_path = os.path.join(tempfile.gettempdir(), "werss_jobs.lock")
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            import fcntl  # 仅 POSIX 可用
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except ImportError:
+            # 非 POSIX 平台（如 Windows）退化为 msvcrt 文件锁
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        _job_leader_lock_fd = fd  # 持有句柄，防止被 GC 关闭从而释放锁
+        return True
+    except (BlockingIOError, OSError):
+        # 已有其它 worker 持锁，本进程不作为 leader
+        return False
+    except Exception as e:
+        # 锁机制异常时，保守起见仍允许注册（退化为旧行为），避免完全不跑定时任务
+        print_warning(f"定时任务跨进程锁获取异常，按单进程处理: {e}")
+        return True
+
+
 def start_all_task():
+    # 跨进程去重：多 worker 时只让一个进程注册并运行定时任务
+    if not _acquire_job_leader_lock():
+        print_warning("【定时任务】检测到其它进程已持有定时任务锁，本 worker 跳过定时任务注册")
+        return
+
     # 0. 旧 MessageTask -> FetchTask + NotifyTask 一次性迁移
     try:
         from jobs.migrate_message_task import migrate_message_tasks_if_needed
