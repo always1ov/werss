@@ -27,6 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget curl ca-certificates \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
@@ -38,7 +39,7 @@ COPY requirements.slim.txt .
 RUN pip install uv --no-cache-dir
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -r requirements.slim.txt || \
-    pip install -r requirements.slim.txt
+    pip install --no-cache-dir -r requirements.slim.txt
 
 # 安装 Playwright 浏览器（打包进镜像，避免服务器网络受限无法下载）
 # 注意：放在「复制业务代码」之前，仅 playwright 版本变更才重跑本层
@@ -51,7 +52,8 @@ RUN export PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=300000 && \
       ( echo "官方 CDN 失败，尝试 npmmirror..." && \
         PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright \
         python3 -m playwright install ${BROWSER_TYPE} --with-deps ) \
-    ) && rm -rf /var/lib/apt/lists/*
+    ) && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/* /var/tmp/*
 
 # 复制业务代码
 COPY config.example.yaml config.yaml

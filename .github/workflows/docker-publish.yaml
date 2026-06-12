@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - claude/fervent-mayer-ml9kvv  # 临时：构建测试镜像验证瘦身，合并前移除
   workflow_dispatch:  # 支持手动触发
 
 permissions:
