@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.4
 # BuildKit：DOCKER_BUILDKIT=1 docker compose build（或默认已开启）以使用 RUN --mount=type=cache
+# CI: 验证 GITHUB_TOKEN 发布流程可用（首次以新 workflow 发布 latest）
 
 # 多阶段构建：第一阶段 - 前端构建（在构建机架构上运行）
 FROM --platform=$BUILDPLATFORM node:20.18.0-slim AS frontend-builder
